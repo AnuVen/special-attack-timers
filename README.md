@@ -10,7 +10,7 @@ Displays a timer (either ticks, seconds, or decimals) until you regenerate speci
 
 
 
-<span style="color: red;">Disable 'Show spec. attack regen' in 'Regeneration Meter' plugin</span>
+**Important:** Disable “Show spec. attack regen” in Regeneration Meter.
 
 
 <img width="232" height="158" alt="Screenshot 2026-01-19 at 1 30 40 PM" src="https://github.com/user-attachments/assets/174d9ac4-a690-4a19-ae6b-7330fe12102e" />

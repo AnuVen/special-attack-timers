@@ -230,9 +230,10 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private static final int TOB_VERZIK_REGION = 12611;
 
 	/**
-	 * Verzik NPC ID when the fight starts (transforms from 14796 to 8370).
+	 * Verzik NPC IDs when the fight starts (transforms to these IDs).
+	 * 8370 = Normal Mode, 10831 = Entry Mode, 10848 = Hard Mode.
 	 */
-	private static final int VERZIK_FIGHT_START_NPC_ID = 8370;
+	private static final Set<Integer> VERZIK_FIGHT_START_NPC_IDS = Set.of(8370, 10831, 10848);
 
 	/**
 	 * Special attack regenerates 10% every 30 seconds (50 game ticks).
@@ -630,8 +631,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 			updateSurgePauseState();
 		}
 
-		// Verzik fight start - NPC 8370 spawns when the fight begins
-		if (npc.getId() == VERZIK_FIGHT_START_NPC_ID && tobBetweenRooms && !combatAreaEnteredThisRoom)
+		// Verzik fight start - NPC spawns when the fight begins (different IDs for different modes)
+		if (VERZIK_FIGHT_START_NPC_IDS.contains(npc.getId()) && tobBetweenRooms && !combatAreaEnteredThisRoom)
 		{
 			tobBetweenRooms = false;
 			combatAreaEnteredThisRoom = true;

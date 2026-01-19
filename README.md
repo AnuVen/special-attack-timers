@@ -1,5 +1,5 @@
 - Displays a timer (either ticks, seconds, or decimals) until you regenerate special attack.
 - Accounts for special attack resets that happen at Colosseum and Doom of Mokhaoitl
-- Timer resets whenever spec energy actually increases, preventing drift between the overlay and actual game mechanics
+- Timer resets whenever spec energy actually increases, preventing drift between the overlay and actual game mechanics (accounts for surge pot / death charge same tick regen)
 - Fixed Surge Pot timer for ToB, Colosseum, and Doom of Mokhaoitl
 - Performs identically to Regeneration meter otherwise

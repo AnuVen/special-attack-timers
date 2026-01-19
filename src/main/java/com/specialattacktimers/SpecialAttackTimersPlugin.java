@@ -3,9 +3,11 @@ package com.specialattacktimers;
 import com.google.inject.Provides;
 import javax.inject.Inject;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Set;
 import net.runelite.api.ChatMessageType;
@@ -24,7 +26,7 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
-import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.config.ConfigManager;
@@ -128,21 +130,22 @@ public class SpecialAttackTimersPlugin extends Plugin
 	/**
 	 * Surge potion cooldown duration in ticks (5 minutes = 300 seconds = 500 ticks).
 	 */
-	public static final int SURGE_COOLDOWN_TICKS = 500;
+	private static final int SURGE_COOLDOWN_TICKS = 500;
 
 	/**
 	 * Surge potion cooldown duration (5 minutes).
 	 * Using wall-clock time for accurate display like RuneLite's timer system.
 	 */
-	public static final Duration SURGE_COOLDOWN_DURATION = Duration.ofMillis(SURGE_COOLDOWN_TICKS * 600L);
+	private static final Duration SURGE_COOLDOWN_DURATION = Duration.ofMillis(SURGE_COOLDOWN_TICKS * 600L);
 
 	// TOB
 
 	/**
 	 * Pattern to match TOB room completion messages.
 	 * Matches "Wave 'Room Name' (...) complete!" for all rooms.
+	 * Group 1 captures the room name.
 	 */
-	private static final Pattern TOB_ROOM_COMPLETED_PATTERN = Pattern.compile("^Wave '.*' \\(.*\\) complete!.*");
+	private static final Pattern TOB_ROOM_COMPLETED_PATTERN = Pattern.compile("^Wave '(.*)' \\(.*\\) complete!.*");
 
 	/**
 	 * Pattern to match TOB completion message (after Verzik).
@@ -164,11 +167,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 		12612,  // Xarpus
 		12611   // Verzik
 	);
-
-	/**
-	 * TOB lobby region ID (template).
-	 */
-	private static final int TOB_LOBBY_REGION = 12869;
 
 	/**
 	 * Bloat region ID (template). Bloat region includes a hallway before the combat area,
@@ -225,15 +223,51 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private static final int XARPUS_BARRIER_Y = 4380;
 
 	/**
-	 * Verzik region ID (template). Uses NPC spawn detection (ID 8370).
-	 */
-	private static final int TOB_VERZIK_REGION = 12611;
-
-	/**
-	 * Verzik NPC IDs when the fight starts (transforms to these IDs).
-	 * 8370 = Normal Mode, 10831 = Entry Mode, 10848 = Hard Mode.
+	 * Verzik P1 NPC IDs when the fight starts.
+	 * Verzik transforms into these IDs (doesn't spawn as them), so we use NpcChanged event.
+	 * 8370 = Normal Mode P1, 10831 = Entry Mode P1, 10848 = Hard Mode P1.
 	 */
 	private static final Set<Integer> VERZIK_FIGHT_START_NPC_IDS = Set.of(8370, 10831, 10848);
+
+	/**
+	 * TOB reward chest region ID (template).
+	 * Surge potion timer should be hidden when entering this region.
+	 */
+	private static final int TOB_REWARD_REGION = 12867;
+
+	/**
+	 * Enum representing TOB rooms in order.
+	 * Used to track which room should be checked next for entry detection,
+	 * preventing re-triggering on the same tiles when leaving a room.
+	 */
+	@Getter
+	@RequiredArgsConstructor
+	private enum TobRoom
+	{
+		MAIDEN(12613),
+		BLOAT(13125),
+		NYLOCAS(13122),
+		SOTETSEG(13123),
+		XARPUS(12612),
+		VERZIK(12611),
+		COMPLETE(-1);
+
+		private final int regionId;
+
+		/**
+		 * Gets the next room in sequence.
+		 */
+		public TobRoom next()
+		{
+			int nextOrdinal = this.ordinal() + 1;
+			TobRoom[] values = TobRoom.values();
+			if (nextOrdinal >= values.length)
+			{
+				return COMPLETE;
+			}
+			return values[nextOrdinal];
+		}
+	}
 
 	/**
 	 * Special attack regenerates 10% every 30 seconds (50 game ticks).
@@ -278,8 +312,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private SpecialAttackTimersInfoBox infoBox;
 
 	/**
-	 * Whether we are currently between waves (Minimus is present).
-	 * When true, the spec regen timer is stopped and will reset when wave starts.
+	 * Whether we are currently between waves/delves (Colosseum or Doom of Mokhaoitl).
+	 * When true, the spec regen timer is stopped and will reset when the next encounter starts.
 	 */
 	@Getter
 	private boolean betweenWaves = false;
@@ -340,6 +374,13 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * Reset when entering a new region or when a room completes.
 	 */
 	private boolean combatAreaEnteredThisRoom = false;
+
+	/**
+	 * The next TOB room we're expecting to enter.
+	 * Only coordinate/NPC spawn checks for this room will unpause the timer.
+	 * This prevents re-triggering when walking back over previous room's entry tiles.
+	 */
+	private TobRoom nextExpectedTobRoom = TobRoom.MAIDEN;
 
 	/**
 	 * Wall-clock time when the surge potion cooldown ends.
@@ -484,6 +525,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		tobBetweenRooms = false;
 		lastRegionId = -1;
 		combatAreaEnteredThisRoom = false;
+		nextExpectedTobRoom = TobRoom.MAIDEN;
 		surgeEndTime = null;
 		surgePausedRemaining = null;
 	}
@@ -569,8 +611,9 @@ public class SpecialAttackTimersPlugin extends Plugin
 			}
 			else
 			{
-				// Left TOB, resume surge cooldown timer
+				// Left TOB, reset state for next raid
 				tobBetweenRooms = false;
+				nextExpectedTobRoom = TobRoom.MAIDEN;
 			}
 			updateSurgePauseState();
 		}
@@ -615,7 +658,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * Handles Doom of Mokhaoitl spec regen timer.
 	 * Uses getMaxRegenTicks() - 2 for Doom because the game's internal timer starts
 	 * 2 ticks before the NPC spawn event fires.
-	 * Note: TOB room detection uses region-based detection in onGameTick instead.
 	 */
 	@Subscribe
 	public void onNpcSpawned(NpcSpawned event)
@@ -630,48 +672,28 @@ public class SpecialAttackTimersPlugin extends Plugin
 			ticksUntilRegen = getMaxRegenTicks() - 2;
 			updateSurgePauseState();
 		}
-
-		// Verzik fight start - NPC spawns when the fight begins (different IDs for different modes)
-		if (VERZIK_FIGHT_START_NPC_IDS.contains(npc.getId()) && tobBetweenRooms && !combatAreaEnteredThisRoom)
-		{
-			tobBetweenRooms = false;
-			combatAreaEnteredThisRoom = true;
-			updateSurgePauseState();
-		}
 	}
 
 	/**
-	 * Detects when player confirms entering a TOB boss room via dialogue.
-	 * - Barrier rooms: After clicking "Pass", player clicks "Yes, let's begin."
-	 * - Verzik: After her dialogue "Oh I'm going to enjoy this...", player clicks "Continue"
+	 * Detects when Verzik transforms to her fighting form.
+	 * Verzik doesn't spawn as her fight NPC ID - she transforms into it.
+	 * This handles Entry Mode (10831), Normal Mode (8370), and Hard Mode (10848).
 	 */
 	@Subscribe
-	public void onMenuOptionClicked(MenuOptionClicked event)
+	public void onNpcChanged(NpcChanged event)
 	{
-		if (!insideTob)
-		{
-			return;
-		}
+		NPC npc = event.getNpc();
 
-		String menuOption = event.getMenuOption();
-
-		if (!tobBetweenRooms || menuOption == null)
+		// Verzik fight start - NPC transforms when the fight begins
+		// Only trigger if Verzik is the next expected room
+		if (VERZIK_FIGHT_START_NPC_IDS.contains(npc.getId())
+			&& nextExpectedTobRoom == TobRoom.VERZIK
+			&& tobBetweenRooms
+			&& !combatAreaEnteredThisRoom)
 		{
-			return;
-		}
-
-		// Detect the dialogue confirmation to enter a TOB boss room (barrier rooms)
-		if (menuOption.contains("Yes, let's begin"))
-		{
+			log.debug("Verzik NPC {} transformed (fight started), unpausing timer", npc.getId());
 			tobBetweenRooms = false;
-			updateSurgePauseState();
-			return;
-		}
-
-		// Detect Verzik fight start - "Continue" after her dialogue in Verzik region (12611)
-		if (menuOption.equals("Continue") && getTemplateRegionId() == 12611)
-		{
-			tobBetweenRooms = false;
+			combatAreaEnteredThisRoom = true;
 			updateSurgePauseState();
 		}
 	}
@@ -753,12 +775,14 @@ public class SpecialAttackTimersPlugin extends Plugin
 		// TOB Checks
 		// Check if TOB room was completed - this is when surge cooldown pauses
 		// Timer resumes when entering the next room's combat area
-		if (TOB_ROOM_COMPLETED_PATTERN.matcher(strippedMessage).matches())
+		Matcher tobMatcher = TOB_ROOM_COMPLETED_PATTERN.matcher(strippedMessage);
+		if (tobMatcher.matches())
 		{
 			insideTob = true; // Ensure we track that we're in TOB
 			tobBetweenRooms = true;
-			// combatAreaEnteredThisRoom stays true to prevent re-triggering while still in this room
-			// It resets when entering a new region
+			// Advance to the next expected room based on which room was completed
+			String roomName = tobMatcher.group(1);
+			advanceToNextTobRoom(roomName);
 			updateSurgePauseState();
 			return;
 		}
@@ -873,14 +897,18 @@ public class SpecialAttackTimersPlugin extends Plugin
 			// Reset combat area flag when entering a new region
 			combatAreaEnteredThisRoom = false;
 
-			// For rooms without hallway issues or special detection needs, use region-based detection
-			// Maiden (12613) is the only room that uses pure region-based detection
-			if (tobBetweenRooms && TOB_BOSS_ROOM_REGIONS.contains(currentRegion)
-				&& currentRegion != TOB_BLOAT_REGION
-				&& currentRegion != TOB_NYLOCAS_REGION
-				&& currentRegion != TOB_SOTETSEG_REGION
-				&& currentRegion != TOB_XARPUS_REGION
-				&& currentRegion != TOB_VERZIK_REGION)
+			// Clear surge timer and reset TOB state when entering reward room
+			if (currentRegion == TOB_REWARD_REGION)
+			{
+				clearSurgeCooldown();
+				tobBetweenRooms = false;
+				nextExpectedTobRoom = TobRoom.MAIDEN; // Reset for next raid
+			}
+			// Maiden uses pure region-based detection
+			// Only trigger if Maiden is the next expected room
+			else if (tobBetweenRooms
+				&& nextExpectedTobRoom == TobRoom.MAIDEN
+				&& currentRegion == TobRoom.MAIDEN.getRegionId())
 			{
 				tobBetweenRooms = false;
 				combatAreaEnteredThisRoom = true;
@@ -889,7 +917,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 			lastRegionId = currentRegion;
 		}
 
-		// Bloat and Nylocas use coordinate-based detection
+		// Coordinate-based detection for TOB rooms (Bloat, Nylocas, Sotetseg, Xarpus)
+		// Only check for the next expected room to prevent re-triggering on previous room tiles
 		if (tobBetweenRooms && !combatAreaEnteredThisRoom)
 		{
 			WorldPoint templatePoint = getTemplateWorldPoint();
@@ -899,29 +928,30 @@ public class SpecialAttackTimersPlugin extends Plugin
 				int y = templatePoint.getY();
 				boolean enteredCombatArea = false;
 
+				// Only check for entry to the next expected room
 				// Bloat: barrier at X=3303, Y=4446-4449
-				if (currentRegion == TOB_BLOAT_REGION)
+				if (nextExpectedTobRoom == TobRoom.BLOAT && currentRegion == TOB_BLOAT_REGION)
 				{
 					enteredCombatArea = x <= BLOAT_BARRIER_X
 						&& y >= BLOAT_BARRIER_MIN_Y
 						&& y <= BLOAT_BARRIER_MAX_Y;
 				}
 				// Nylocas: barrier at X=3295-3296, Y=4254
-				else if (currentRegion == TOB_NYLOCAS_REGION)
+				else if (nextExpectedTobRoom == TobRoom.NYLOCAS && currentRegion == TOB_NYLOCAS_REGION)
 				{
 					enteredCombatArea = x >= NYLOCAS_BARRIER_MIN_X
 						&& x <= NYLOCAS_BARRIER_MAX_X
 						&& y == NYLOCAS_BARRIER_Y;
 				}
 				// Sotetseg: barrier at X=3278-3281, Y=4308
-				else if (currentRegion == TOB_SOTETSEG_REGION)
+				else if (nextExpectedTobRoom == TobRoom.SOTETSEG && currentRegion == TOB_SOTETSEG_REGION)
 				{
 					enteredCombatArea = x >= SOTETSEG_BARRIER_MIN_X
 						&& x <= SOTETSEG_BARRIER_MAX_X
 						&& y == SOTETSEG_BARRIER_Y;
 				}
 				// Xarpus: barrier at X=3169-3171, Y=4380
-				else if (currentRegion == TOB_XARPUS_REGION)
+				else if (nextExpectedTobRoom == TobRoom.XARPUS && currentRegion == TOB_XARPUS_REGION)
 				{
 					enteredCombatArea = x >= XARPUS_BARRIER_MIN_X
 						&& x <= XARPUS_BARRIER_MAX_X
@@ -949,16 +979,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 	}
 
 	/**
-	 * Gets the current special attack energy as a percentage.
-	 *
-	 * @return Special attack percentage (0-100)
-	 */
-	public int getSpecPercent()
-	{
-		return getSpecEnergy() / 10;
-	}
-
-	/**
 	 * Checks if special attack is at maximum.
 	 *
 	 * @return true if spec is 100%
@@ -966,16 +986,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 	public boolean isSpecFull()
 	{
 		return getSpecEnergy() >= MAX_SPEC_ENERGY;
-	}
-
-	/**
-	 * Gets the time until next spec regen in seconds.
-	 *
-	 * @return Seconds until regen (each tick is 0.6 seconds)
-	 */
-	public double getSecondsUntilRegen()
-	{
-		return ticksUntilRegen * 0.6;
 	}
 
 	/**
@@ -1035,6 +1045,55 @@ public class SpecialAttackTimersPlugin extends Plugin
 	}
 
 	/**
+	 * Advances nextExpectedTobRoom to the room after the one that was just completed.
+	 * This ensures we only check for entry to the correct next room.
+	 *
+	 * @param roomName The name of the room that was completed (from chat message)
+	 */
+	private void advanceToNextTobRoom(String roomName)
+	{
+		if (roomName == null)
+		{
+			return;
+		}
+
+		// Map room names from chat messages to TobRoom enum
+		String normalizedName = roomName.toLowerCase();
+		TobRoom completedRoom = null;
+
+		if (normalizedName.contains("maiden"))
+		{
+			completedRoom = TobRoom.MAIDEN;
+		}
+		else if (normalizedName.contains("bloat"))
+		{
+			completedRoom = TobRoom.BLOAT;
+		}
+		else if (normalizedName.contains("nylocas"))
+		{
+			completedRoom = TobRoom.NYLOCAS;
+		}
+		else if (normalizedName.contains("sotetseg"))
+		{
+			completedRoom = TobRoom.SOTETSEG;
+		}
+		else if (normalizedName.contains("xarpus"))
+		{
+			completedRoom = TobRoom.XARPUS;
+		}
+		else if (normalizedName.contains("verzik"))
+		{
+			completedRoom = TobRoom.VERZIK;
+		}
+
+		if (completedRoom != null)
+		{
+			nextExpectedTobRoom = completedRoom.next();
+			log.debug("TOB room {} completed, next expected: {}", completedRoom, nextExpectedTobRoom);
+		}
+	}
+
+	/**
 	 * Gets the remaining surge potion cooldown duration.
 	 * Uses wall-clock time for accurate display.
 	 *
@@ -1056,21 +1115,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 			return remaining;
 		}
 		return Duration.ZERO;
-	}
-
-	/**
-	 * Gets the remaining surge cooldown in ticks (for backwards compatibility).
-	 *
-	 * @return Ticks remaining, or 0 if no cooldown is active
-	 */
-	public int getSurgeCooldownTicks()
-	{
-		Duration remaining = getSurgeCooldownRemaining();
-		if (remaining.isZero() || remaining.isNegative())
-		{
-			return 0;
-		}
-		return (int) (remaining.toMillis() / 600);
 	}
 
 	/**

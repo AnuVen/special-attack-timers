@@ -113,8 +113,8 @@ public interface SpecialAttackTimersConfig extends Config
 	@Alpha
 	@ConfigItem(
 		keyName = "activeColor",
-		name = "Active Color",
-		description = "Color when spec regen timer is running",
+		name = "Infobox Color",
+		description = "Color for the spec regen timer infobox text",
 		position = 11,
 		section = colorSection
 	)

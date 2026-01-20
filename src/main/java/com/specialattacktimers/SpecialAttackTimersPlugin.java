@@ -41,7 +41,7 @@ import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.util.Text;
 
 /**
- * Special Attack Regen Timer Plugin for the Colosseum, Doom of Mokhaoitl, and Theatre of Blood.
+ * Special Attack Regen Timer Plugin for the Colosseum, Doom of Mokhaiotl, and Theatre of Blood.
  *
  * This plugin tracks special attack regeneration timing in content where the timer
  * pauses between encounters (waves/delves/rooms) and resets when a new encounter starts,
@@ -53,7 +53,7 @@ import net.runelite.client.util.Text;
  * - "Wave: X": New wave starting, timer resets to 30 seconds (or 15 with Lightbearer)
  * - "Search the chest nearby": Run over (claimed rewards), timer continues
  *
- * Doom of Mokhaoitl transitions:
+ * Doom of Mokhaiotl transitions:
  * - "Delve level: X duration: ..." (chat): Delve finished, timer stops
  * - Boss NPC spawns: Timer resumes and resets (more accurate than chat message)
  *
@@ -68,8 +68,8 @@ import net.runelite.client.util.Text;
 @Slf4j
 @PluginDescriptor(
 	name = "Special Attack Timers",
-	description = "Properly tracks special attack regeneration and surge potion cooldown in wave-based content (Colosseum, Doom of Mokhaoitl, Theatre of Blood)",
-	tags = {"colosseum", "special", "attack", "spec", "timer", "regen", "lightbearer", "doom", "mokhaoitl", "delve", "tob", "theatre", "blood", "surge", "potion"}
+	description = "Properly tracks special attack regeneration and surge potion cooldown in wave-based content (Colosseum, Doom of Mokhaiotl, Theatre of Blood)",
+	tags = {"colosseum", "special", "attack", "spec", "timer", "regen", "lightbearer", "doom", "mokhaiotl", "delve", "tob", "theatre", "blood", "surge", "potion"}
 )
 public class SpecialAttackTimersPlugin extends Plugin
 {
@@ -93,11 +93,35 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private static final String CLAIM_REWARDS_MESSAGE = "Search the chest nearby";
 
 	/**
-	 * Pattern to match the delve completed message in Doom of Mokhaoitl.
+	 * Region ID for Fortis Colosseum.
+	 * Used to detect when the player leaves the area to unpause timers.
+	 */
+	private static final int COLOSSEUM_REGION_ID = 7216;
+
+	/**
+	 * Pattern to match the delve completed message in Doom of Mokhaiotl.
 	 * Matches "Delve level: X duration: ..." which indicates delve was completed.
 	 * This is when spec regen stops. Timer resumes when the boss NPC spawns.
 	 */
 	private static final Pattern DELVE_COMPLETED_PATTERN = Pattern.compile("^Delve level: \\d+ duration:.*");
+
+	/**
+	 * Region IDs for Doom of Mokhaiotl content.
+	 * Used to detect when the player leaves the area to unpause timers.
+	 * Includes the delve areas and boss room.
+	 */
+	private static final Set<Integer> DOOM_REGION_IDS = Set.of(
+		13668,  // Doom area
+		14180   // Doom area
+	);
+
+	/**
+	 * Doom exit tile coordinates.
+	 * When leaving Doom normally (not teleporting), the player arrives at this tile
+	 * in the hallway (region 5269). We check for this tile to unpause timers.
+	 */
+	private static final int DOOM_EXIT_TILE_X = 1311;
+	private static final int DOOM_EXIT_TILE_Y = 9556;
 
 	/**
 	 * Message that appears when drinking a surge potion (restores 25% spec).
@@ -312,7 +336,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private SpecialAttackTimersInfoBox infoBox;
 
 	/**
-	 * Whether we are currently between waves/delves (Colosseum or Doom of Mokhaoitl).
+	 * Whether we are currently between waves/delves (Colosseum or Doom of Mokhaiotl).
 	 * When true, the spec regen timer is stopped and will reset when the next encounter starts.
 	 */
 	@Getter
@@ -356,6 +380,18 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * Used to determine if TOB room detection should be active.
 	 */
 	private boolean insideTob = false;
+
+	/**
+	 * Whether the player is currently inside Doom of Mokhaiotl.
+	 * Used to detect when the player leaves to unpause timers.
+	 */
+	private boolean insideDoom = false;
+
+	/**
+	 * Whether the player is currently inside Fortis Colosseum.
+	 * Used to detect when the player leaves to unpause timers.
+	 */
+	private boolean insideColosseum = false;
 
 	/**
 	 * Whether the player is currently between TOB rooms.
@@ -522,6 +558,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 		ignoreSpecIncreaseUntilTick = -1;
 		expectedSpecRestoreAmount = 0;
 		insideTob = false;
+		insideDoom = false;
+		insideColosseum = false;
 		tobBetweenRooms = false;
 		lastRegionId = -1;
 		combatAreaEnteredThisRoom = false;
@@ -655,7 +693,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 	/**
 	 * Detects when boss NPCs spawn to resume timers.
-	 * Handles Doom of Mokhaoitl spec regen timer.
+	 * Handles Doom of Mokhaiotl spec regen timer.
 	 * Uses getMaxRegenTicks() - 2 for Doom because the game's internal timer starts
 	 * 2 ticks before the NPC spawn event fires.
 	 */
@@ -665,7 +703,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		NPC npc = event.getNpc();
 		String name = npc.getName();
 
-		// Doom of Mokhaoitl boss spawn - resumes spec regen timer
+		// Doom of Mokhaiotl boss spawn - resumes spec regen timer
 		if (name != null && name.contains("Doom"))
 		{
 			betweenWaves = false;
@@ -704,7 +742,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * - "Wave X completed!": Wave finished, timer stops
 	 * - "Wave: X" (1-12): Wave starting, timer resets to 30 seconds
 	 * - "Search the chest...": Run over (claimed rewards), timer continues
-	 * Doom of Mokhaoitl:
+	 * Doom of Mokhaiotl:
 	 * - "Delve level: X duration: ...": Delve finished, timer stops
 	 * - "Delve level: X": New delve starting, timer resets
 	 */
@@ -739,6 +777,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		// Check if wave was completed - this is when spec regen stops
 		if (WAVE_COMPLETED_PATTERN.matcher(strippedMessage).matches())
 		{
+			insideColosseum = true; // Ensure we track that we're in Colosseum
 			betweenWaves = true;
 			updateSurgePauseState();
 			return;
@@ -767,6 +806,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		// Timer resumes when the boss NPC spawns (handled in onNpcSpawned)
 		if (DELVE_COMPLETED_PATTERN.matcher(strippedMessage).matches())
 		{
+			insideDoom = true; // Ensure we track that we're in Doom
 			betweenWaves = true;
 			updateSurgePauseState();
 			return;
@@ -862,6 +902,15 @@ public class SpecialAttackTimersPlugin extends Plugin
 			{
 				// Natural spec regen occurred - reset timer
 				ticksUntilRegen = getMaxRegenTicks();
+
+				// Self-correction: if we were paused but spec is regenerating,
+				// the player must have left the wave-based content (teleported out, etc.)
+				// Unpause both the spec timer and surge timer.
+				if (betweenWaves)
+				{
+					betweenWaves = false;
+					updateSurgePauseState();
+				}
 			}
 		}
 
@@ -888,14 +937,32 @@ public class SpecialAttackTimersPlugin extends Plugin
 			}
 		}
 
-		// TOB room entry detection
-		// Resume surge cooldown when entering a boss room region.
-		// Bloat and Nylocas use coordinate-based detection since their regions include hallways.
+		// Region-based detection for Colosseum, Doom of Mokhaiotl, and TOB
 		int currentRegion = getTemplateRegionId();
 		if (currentRegion != -1 && currentRegion != lastRegionId)
 		{
 			// Reset combat area flag when entering a new region
 			combatAreaEnteredThisRoom = false;
+
+			// Doom of Mokhaiotl: detect leaving the area to unpause timers
+			boolean nowInDoom = DOOM_REGION_IDS.contains(currentRegion);
+			if (insideDoom && !nowInDoom && betweenWaves)
+			{
+				// Left Doom while paused - unpause both spec and surge timers
+				betweenWaves = false;
+				updateSurgePauseState();
+			}
+			insideDoom = nowInDoom;
+
+			// Fortis Colosseum: detect leaving the area to unpause timers
+			boolean nowInColosseum = currentRegion == COLOSSEUM_REGION_ID;
+			if (insideColosseum && !nowInColosseum && betweenWaves)
+			{
+				// Left Colosseum while paused - unpause both spec and surge timers
+				betweenWaves = false;
+				updateSurgePauseState();
+			}
+			insideColosseum = nowInColosseum;
 
 			// Clear surge timer and reset TOB state when entering reward room
 			if (currentRegion == TOB_REWARD_REGION)
@@ -915,6 +982,19 @@ public class SpecialAttackTimersPlugin extends Plugin
 				updateSurgePauseState();
 			}
 			lastRegionId = currentRegion;
+		}
+
+		// Doom exit tile detection - when leaving Doom normally (not teleporting),
+		// the player arrives at this specific tile in the hallway
+		if (betweenWaves && client.getLocalPlayer() != null)
+		{
+			WorldPoint playerLocation = client.getLocalPlayer().getWorldLocation();
+			if (playerLocation.getX() == DOOM_EXIT_TILE_X && playerLocation.getY() == DOOM_EXIT_TILE_Y)
+			{
+				betweenWaves = false;
+				insideDoom = false;
+				updateSurgePauseState();
+			}
 		}
 
 		// Coordinate-based detection for TOB rooms (Bloat, Nylocas, Sotetseg, Xarpus)
@@ -1047,7 +1127,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 	/**
 	 * Advances nextExpectedTobRoom to the room after the one that was just completed.
 	 * This ensures we only check for entry to the correct next room.
-	 *
 	 * @param roomName The name of the room that was completed (from chat message)
 	 */
 	private void advanceToNextTobRoom(String roomName)
@@ -1092,11 +1171,9 @@ public class SpecialAttackTimersPlugin extends Plugin
 			log.debug("TOB room {} completed, next expected: {}", completedRoom, nextExpectedTobRoom);
 		}
 	}
-
 	/**
 	 * Gets the remaining surge potion cooldown duration.
 	 * Uses wall-clock time for accurate display.
-	 *
 	 * @return Remaining duration, or Duration.ZERO if no cooldown is active
 	 */
 	public Duration getSurgeCooldownRemaining()

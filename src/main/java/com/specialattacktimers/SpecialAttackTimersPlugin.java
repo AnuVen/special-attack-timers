@@ -21,6 +21,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.SpriteID;
 import net.runelite.api.VarPlayer;
 import net.runelite.api.Varbits;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
@@ -54,7 +55,7 @@ import net.runelite.client.util.Text;
  * - "Search the chest nearby": Run over (claimed rewards), timer continues
  *
  * Doom of Mokhaiotl transitions:
- * - "Delve level: X duration: ..." (chat): Delve finished, timer stops
+ * - "Delve level: X duration: ..." or "Delve level: 8+ (X+ duration: ..." (chat): Delve finished, timer stops
  * - Boss NPC spawns: Timer resumes and resets (more accurate than chat message)
  *
  * Theatre of Blood transitions:
@@ -99,11 +100,13 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private static final int COLOSSEUM_REGION_ID = 7216;
 
 	/**
-	 * Pattern to match the delve completed message in Doom of Mokhaiotl.
-	 * Matches "Delve level: X duration: ..." which indicates delve was completed.
+	 * Prefix for delve completed messages in Doom of Mokhaiotl.
+	 * Regular delves: "Delve level: X duration: ..."
+	 * Deep delves (8+): varies in format, but always starts with "Delve level:" and contains "duration:"
 	 * This is when spec regen stops. Timer resumes when the boss NPC spawns.
 	 */
-	private static final Pattern DELVE_COMPLETED_PATTERN = Pattern.compile("^Delve level: \\d+ duration:.*");
+	private static final String DELVE_COMPLETED_PREFIX = "Delve level:";
+	private static final String DELVE_DURATION_MARKER = "duration:";
 
 	/**
 	 * Region IDs for Doom of Mokhaiotl content.
@@ -161,6 +164,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * Using wall-clock time for accurate display like RuneLite's timer system.
 	 */
 	private static final Duration SURGE_COOLDOWN_DURATION = Duration.ofMillis(SURGE_COOLDOWN_TICKS * 600L);
+
 
 	// TOB
 
@@ -435,6 +439,19 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 */
 	private SurgePotionInfoBox surgeInfoBox;
 
+	/**
+	 * Last known value of the surge potion varbit.
+	 * Used to detect when the game clears the cooldown (varbit goes to 0).
+	 */
+	private int lastSurgeVarbitValue = 0;
+
+	/**
+	 * Flag to force syncing with the next varbit update.
+	 * Set when resuming from pause, as the varbit might update to the correct
+	 * value shortly after the wave/room starts.
+	 */
+	private boolean surgeNeedsVarbitSync = false;
+
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -566,6 +583,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 		nextExpectedTobRoom = TobRoom.MAIDEN;
 		surgeEndTime = null;
 		surgePausedRemaining = null;
+		lastSurgeVarbitValue = 0;
+		surgeNeedsVarbitSync = false;
 	}
 
 	@Provides
@@ -613,16 +632,70 @@ public class SpecialAttackTimersPlugin extends Plugin
 		{
 			// Initialize lastSpecEnergy on login
 			lastSpecEnergy = getSpecEnergy();
+			// Note: Surge timer initialization is handled in onVarbitChanged,
+			// which fires after LOGGED_IN once varbits are loaded from the server
 		}
 	}
 
 	/**
-	 * Handles varbit changes to detect entering/leaving Theatre of Blood.
+	 * Handles varbit changes to detect entering/leaving Theatre of Blood
+	 * and surge potion cooldown state changes.
 	 * TOB varbit is 2 or 3 when inside, other values when outside.
+	 * Surge varbit (2386) tracks the cooldown server-side; syncs our timer on changes.
 	 */
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
+		// Check for surge potion varbit changes
+		// This syncs our manual timer with the game state (handles login, death, world hop, etc.)
+		if (event.getVarbitId() == VarbitID.SURGE_POTION_TIMER)
+		{
+			int newValue = event.getValue();
+			if (newValue > 0)
+			{
+				// Varbit has a positive value - start/update surge timer
+				// This handles login with existing cooldown, as varbits fire after LOGGED_IN
+				int remainingTicks = newValue * 10;
+				Duration remainingDuration = Duration.ofMillis(remainingTicks * 600L);
+
+				// Update timer if:
+				// 1. surgeNeedsVarbitSync is true (just resumed, need to sync with game)
+				// 2. No timer exists OR new duration is longer than current
+				//    (handles login where varbit may fire multiple times with increasing values)
+				Duration currentRemaining = getSurgeCooldownRemaining();
+				boolean shouldSync = surgeNeedsVarbitSync || remainingDuration.compareTo(currentRemaining) > 0;
+				log.debug("Surge varbit changed: value={}, ticks={}, duration={}, currentRemaining={}, paused={}, needsSync={}, shouldSync={}",
+					newValue, remainingTicks, remainingDuration, currentRemaining, surgePausedRemaining != null, surgeNeedsVarbitSync, shouldSync);
+
+				if (shouldSync)
+				{
+					if (betweenWaves || tobBetweenRooms)
+					{
+						// Start in paused state
+						surgePausedRemaining = remainingDuration;
+						surgeEndTime = null;
+					}
+					else
+					{
+						surgeEndTime = Instant.now().plus(remainingDuration);
+						surgePausedRemaining = null;
+					}
+					updateSurgeInfoBox();
+					surgeNeedsVarbitSync = false;
+				}
+			}
+			else if (lastSurgeVarbitValue > 0)
+			{
+				// Cooldown was cleared by the game (death, expiration, etc.)
+				// Clear our manual timer to stay in sync
+				log.debug("Surge varbit cleared by game (was {}, now 0), clearing manual timer", lastSurgeVarbitValue);
+				clearSurgeCooldown();
+				removeSurgeInfoBox();
+			}
+			lastSurgeVarbitValue = newValue;
+		}
+
+		// Check for TOB entry/exit
 		int tobVar = client.getVarbitValue(Varbits.THEATRE_OF_BLOOD);
 		boolean nowInsideTob = tobVar == 2 || tobVar == 3;
 
@@ -706,6 +779,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		// Doom of Mokhaiotl boss spawn - resumes spec regen timer
 		if (name != null && name.contains("Doom"))
 		{
+			log.debug("Doom boss '{}' spawned - resuming timers. Surge paused remaining: {}", name, surgePausedRemaining);
 			betweenWaves = false;
 			ticksUntilRegen = getMaxRegenTicks() - 2;
 			updateSurgePauseState();
@@ -743,7 +817,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	 * - "Wave: X" (1-12): Wave starting, timer resets to 30 seconds
 	 * - "Search the chest...": Run over (claimed rewards), timer continues
 	 * Doom of Mokhaiotl:
-	 * - "Delve level: X duration: ...": Delve finished, timer stops
+	 * - "Delve level: X duration: ..." or "Delve level: 8+ (X+ duration: ...": Delve finished, timer stops
 	 * - "Delve level: X": New delve starting, timer resets
 	 */
 	@Subscribe
@@ -802,12 +876,22 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 		// Doom Checks
 
+		// Log any Delve-related messages for debugging
+		if (strippedMessage.contains("Delve") || strippedMessage.contains("delve"))
+		{
+			log.debug("Doom-related message received: '{}'", strippedMessage);
+		}
+
 		// Check if delve was completed - this is when spec regen stops
 		// Timer resumes when the boss NPC spawns (handled in onNpcSpawned)
-		if (DELVE_COMPLETED_PATTERN.matcher(strippedMessage).matches())
+		// Matches any message starting with "Delve level:" and containing "duration:"
+		// This handles both regular delves and deep delves (8+) regardless of format
+		if (strippedMessage.startsWith(DELVE_COMPLETED_PREFIX) && strippedMessage.contains(DELVE_DURATION_MARKER))
 		{
 			insideDoom = true; // Ensure we track that we're in Doom
 			betweenWaves = true;
+			log.debug("Doom delve completed - PAUSING timers. Message: '{}', Surge remaining before pause: {}",
+				strippedMessage, getSurgeCooldownRemaining());
 			updateSurgePauseState();
 			return;
 		}
@@ -859,6 +943,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		if (strippedMessage.equals(SURGE_COOLDOWN_EXPIRED_MESSAGE))
 		{
 			clearSurgeCooldown();
+			removeSurgeInfoBox();
 			return;
 		}
 	}
@@ -1222,11 +1307,33 @@ public class SpecialAttackTimersPlugin extends Plugin
 				surgePausedRemaining = Duration.ZERO;
 			}
 			surgeEndTime = null;
+			log.debug("Surge timer PAUSED with {} remaining (betweenWaves={}, tobBetweenRooms={})",
+				surgePausedRemaining, betweenWaves, tobBetweenRooms);
 		}
 		else if (!shouldBePaused && isCurrentlyPaused)
 		{
-			// Transition to resumed: restore end time from remaining duration
-			surgeEndTime = Instant.now().plus(surgePausedRemaining);
+			// Transition to resumed: sync with game varbit (source of truth)
+			// The game's varbit accurately reflects the paused duration, which may differ
+			// slightly from what we saved due to timing differences in pause detection
+			int varbitValue = client.getVarbitValue(VarbitID.SURGE_POTION_TIMER);
+			if (varbitValue > 0)
+			{
+				int remainingTicks = varbitValue * 10;
+				Duration varbitDuration = Duration.ofMillis(remainingTicks * 600L);
+				log.debug("Surge timer RESUMED - syncing with varbit: value={}, {} ticks = {}, was paused at {}",
+					varbitValue, remainingTicks, varbitDuration, surgePausedRemaining);
+				surgeEndTime = Instant.now().plus(varbitDuration);
+				// Set flag to accept the next varbit update, as the game may send a
+				// corrected value shortly after the wave/room starts
+				surgeNeedsVarbitSync = true;
+			}
+			else
+			{
+				// Varbit is 0 (cooldown expired during pause), clear the timer
+				log.debug("Surge timer RESUMED but varbit is 0 (expired during pause), clearing timer");
+				clearSurgeCooldown();
+				removeSurgeInfoBox();
+			}
 			surgePausedRemaining = null;
 		}
 	}
@@ -1234,9 +1341,13 @@ public class SpecialAttackTimersPlugin extends Plugin
 	/**
 	 * Starts the surge potion cooldown timer.
 	 * Handles starting in either paused or active state.
+	 * Also syncs the varbit tracking to detect game-side clears.
 	 */
 	private void startSurgeCooldown()
 	{
+		// Sync varbit tracking so we can detect when the game clears the cooldown
+		lastSurgeVarbitValue = client.getVarbitValue(VarbitID.SURGE_POTION_TIMER);
+
 		if (betweenWaves || tobBetweenRooms)
 		{
 			// Start in paused state
@@ -1253,11 +1364,13 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 	/**
 	 * Clears the surge potion cooldown timer.
-	 * Called when the cooldown expires (game message) or when resetting state.
+	 * Called when the cooldown expires (game message), game clears it (death), or when resetting state.
 	 */
 	private void clearSurgeCooldown()
 	{
 		surgeEndTime = null;
 		surgePausedRemaining = null;
+		lastSurgeVarbitValue = 0;
+		surgeNeedsVarbitSync = false;
 	}
 }

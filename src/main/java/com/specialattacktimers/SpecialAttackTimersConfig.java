@@ -133,7 +133,7 @@ public interface SpecialAttackTimersConfig extends Config
 	)
 	default Color circleColor()
 	{
-		return new Color(0, 255, 0, 200);
+		return new Color(0, 255, 255, 255);
 	}
 
 	@Alpha

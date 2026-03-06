@@ -58,6 +58,6 @@ public class SpecialAttackTimersInfoBox extends InfoBox
 	@Override
 	public String getTooltip()
 	{
-		return "Spec Regen Timer";
+		return "Special Attack Timers";
 	}
 }

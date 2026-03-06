@@ -8,6 +8,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Range;
 
 @ConfigGroup("specialattacktimers")
 public interface SpecialAttackTimersConfig extends Config
@@ -103,6 +104,19 @@ public interface SpecialAttackTimersConfig extends Config
 		return DisplayFormat.SECONDS;
 	}
 
+	@Range(min = 0, max = 300)
+	@ConfigItem(
+		keyName = "surgeExpiringThreshold",
+		name = "Surge Expiring Threshold",
+		description = "Seconds remaining to change the surge timer color (0 to disable)",
+		position = 8,
+		section = surgeSection
+	)
+	default int surgeExpiringThreshold()
+	{
+		return 30;
+	}
+
 	@ConfigSection(
 		name = "Colors",
 		description = "Color settings for the overlay",
@@ -160,5 +174,39 @@ public interface SpecialAttackTimersConfig extends Config
 	default Color surgePausedColor()
 	{
 		return new Color(255, 165, 0, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "surgeExpiringColor",
+		name = "Surge Expiring Color",
+		description = "Color for the surge potion cooldown timer when under the expiring threshold",
+		position = 15,
+		section = colorSection
+	)
+	default Color surgeExpiringColor()
+	{
+		return new Color(255, 0, 0, 255);
+	}
+
+	@ConfigSection(
+		name = "Instructions",
+		description = "Important setup instructions",
+		position = 20,
+		closedByDefault = false
+	)
+	String instructionsSection = "instructions";
+
+	@ConfigItem(
+		keyName = "instructionsText",
+		name = "",
+		description = "",
+		position = 21,
+		section = instructionsSection
+	)
+	default String instructionsText()
+	{
+		return "\nPlease disable \"Show spec. attack regen\" in the \"Regeneration Meter\" plugin.\n\n"
+			+ "Optionally, if you're using the Surge Potion timer, disable \"Surge potion timer\" in \"Timers & Buffs\".\n";
 	}
 }

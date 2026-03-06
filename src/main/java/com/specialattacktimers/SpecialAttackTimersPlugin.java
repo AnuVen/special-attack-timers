@@ -380,6 +380,12 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private int expectedSpecRestoreAmount = 0;
 
 	/**
+	 * The tick on which betweenWaves was set to true.
+	 * Used to ignore spec increases on the same tick (e.g. holy water proc in Doom).
+	 */
+	private int betweenWavesPausedTick = -1;
+
+	/**
 	 * Whether the player is currently inside Theatre of Blood.
 	 * Used to determine if TOB room detection should be active.
 	 */
@@ -569,6 +575,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private void resetState()
 	{
 		betweenWaves = false;
+		betweenWavesPausedTick = -1;
 		ticksUntilRegen = SPEC_REGEN_TICKS;
 		lastSpecEnergy = -1;
 		wearingLightbearer = false;
@@ -853,6 +860,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		{
 			insideColosseum = true; // Ensure we track that we're in Colosseum
 			betweenWaves = true;
+			betweenWavesPausedTick = client.getTickCount();
 			updateSurgePauseState();
 			return;
 		}
@@ -876,12 +884,6 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 		// Doom Checks
 
-		// Log any Delve-related messages for debugging
-		if (strippedMessage.contains("Delve") || strippedMessage.contains("delve"))
-		{
-			log.debug("Doom-related message received: '{}'", strippedMessage);
-		}
-
 		// Check if delve was completed - this is when spec regen stops
 		// Timer resumes when the boss NPC spawns (handled in onNpcSpawned)
 		// Matches any message starting with "Delve level:" and containing "duration:"
@@ -890,6 +892,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		{
 			insideDoom = true; // Ensure we track that we're in Doom
 			betweenWaves = true;
+			betweenWavesPausedTick = client.getTickCount();
 			log.debug("Doom delve completed - PAUSING timers. Message: '{}', Surge remaining before pause: {}",
 				strippedMessage, getSurgeCooldownRemaining());
 			updateSurgePauseState();
@@ -925,8 +928,17 @@ public class SpecialAttackTimersPlugin extends Plugin
 		// Use a 2-tick grace period to handle event ordering (onGameTick may fire before onChatMessage).
 		if (strippedMessage.equals(SURGE_POTION_MESSAGE))
 		{
-			ignoreSpecIncreaseUntilTick = client.getTickCount() + 2;
-			expectedSpecRestoreAmount = SURGE_POTION_RESTORE;
+			int currentTick = client.getTickCount();
+			if (currentTick <= ignoreSpecIncreaseUntilTick)
+			{
+				// Already in a grace period (e.g. death charge on same tick) - accumulate
+				expectedSpecRestoreAmount += SURGE_POTION_RESTORE;
+			}
+			else
+			{
+				ignoreSpecIncreaseUntilTick = currentTick + 2;
+				expectedSpecRestoreAmount = SURGE_POTION_RESTORE;
+			}
 			// Start surge cooldown timer (5 minutes) using wall-clock time
 			startSurgeCooldown();
 			return;
@@ -934,8 +946,17 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 		if (strippedMessage.contains(DEATH_CHARGE_MESSAGE))
 		{
-			ignoreSpecIncreaseUntilTick = client.getTickCount() + 2;
-			expectedSpecRestoreAmount = DEATH_CHARGE_RESTORE;
+			int currentTick = client.getTickCount();
+			if (currentTick <= ignoreSpecIncreaseUntilTick)
+			{
+				// Already in a grace period (e.g. surge potion on same tick) - accumulate
+				expectedSpecRestoreAmount += DEATH_CHARGE_RESTORE;
+			}
+			else
+			{
+				ignoreSpecIncreaseUntilTick = currentTick + 2;
+				expectedSpecRestoreAmount = DEATH_CHARGE_RESTORE;
+			}
 			return;
 		}
 
@@ -991,7 +1012,8 @@ public class SpecialAttackTimersPlugin extends Plugin
 				// Self-correction: if we were paused but spec is regenerating,
 				// the player must have left the wave-based content (teleported out, etc.)
 				// Unpause both the spec timer and surge timer.
-				if (betweenWaves)
+				// Skip if spec increased on the same tick we paused (e.g. holy water proc in Doom).
+				if (betweenWaves && client.getTickCount() != betweenWavesPausedTick)
 				{
 					betweenWaves = false;
 					updateSurgePauseState();

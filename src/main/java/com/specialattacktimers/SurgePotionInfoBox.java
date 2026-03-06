@@ -54,6 +54,12 @@ public class SurgePotionInfoBox extends InfoBox
 		{
 			return config.surgePausedColor();
 		}
+		Duration remaining = plugin.getSurgeCooldownRemaining();
+		int threshold = config.surgeExpiringThreshold();
+		if (threshold > 0 && remaining.getSeconds() < threshold)
+		{
+			return config.surgeExpiringColor();
+		}
 		return config.surgeColor();
 	}
 

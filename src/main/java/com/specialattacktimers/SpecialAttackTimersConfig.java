@@ -73,6 +73,30 @@ public interface SpecialAttackTimersConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "showTimeToFullTooltip",
+		name = "Time to Full Tooltip",
+		description = "Show a \"Time to full\" tooltip when hovering the special attack orb",
+		position = 4,
+		section = displaySection
+	)
+	default boolean showTimeToFullTooltip()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "timeToFullFormat",
+		name = "Time to Full Format",
+		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
+		position = 5,
+		section = displaySection
+	)
+	default DisplayFormat timeToFullFormat()
+	{
+		return DisplayFormat.SECONDS;
+	}
+
 	@ConfigSection(
 		name = "Surge Potion Timer",
 		description = "Surge potion cooldown timer settings",

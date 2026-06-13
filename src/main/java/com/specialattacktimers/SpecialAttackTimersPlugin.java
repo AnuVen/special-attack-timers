@@ -326,6 +326,9 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private SpecialAttackTimersCircleOverlay circleOverlay;
 
 	@Inject
+	private SpecialAttackTimersTooltipOverlay tooltipOverlay;
+
+	@Inject
 	private InfoBoxManager infoBoxManager;
 
 	@Inject
@@ -463,6 +466,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	{
 		log.debug("Special Attack Timers plugin started");
 		overlayManager.add(circleOverlay);
+		overlayManager.add(tooltipOverlay);
 		updateInfoBox();
 		updateSurgeInfoBox();
 		resetState();
@@ -473,6 +477,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 	{
 		log.debug("Special Attack Timers plugin stopped");
 		overlayManager.remove(circleOverlay);
+		overlayManager.remove(tooltipOverlay);
 		removeInfoBox();
 		removeSurgeInfoBox();
 		resetState();
@@ -1183,6 +1188,27 @@ public class SpecialAttackTimersPlugin extends Plugin
 	public int getMaxRegenTicks()
 	{
 		return wearingLightbearer ? LIGHTBEARER_REGEN_TICKS : SPEC_REGEN_TICKS;
+	}
+
+	/**
+	 * Gets the number of game ticks until special attack energy reaches 100%.
+	 * The next regen lands in {@link #ticksUntilRegen} ticks, and each regen restores
+	 * 10% (capping at 100%), with subsequent regens a full cycle ({@link #getMaxRegenTicks()})
+	 * apart. Accounts for Lightbearer via the regen cycle length.
+	 *
+	 * @return ticks until spec is full, or 0 if already full
+	 */
+	public int getTicksUntilFull()
+	{
+		int currentSpec = getSpecEnergy();
+		if (currentSpec >= MAX_SPEC_ENERGY)
+		{
+			return 0;
+		}
+
+		// Each regen restores 10% (100 internal units); the final one caps at 100%.
+		int regensNeeded = (int) Math.ceil((MAX_SPEC_ENERGY - currentSpec) / 100.0);
+		return ticksUntilRegen + (regensNeeded - 1) * getMaxRegenTicks();
 	}
 
 	/**

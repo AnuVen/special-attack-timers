@@ -40,6 +40,11 @@ public class SpecialAttackTimersTextOverlay extends Overlay
 
 		setPosition(OverlayPosition.TOP_LEFT);
 		setPriority(PRIORITY_LOW);
+
+		// Don't allow snapping into overlay corners. The minimap sits in the top-right snap corner,
+		// whose drop area grows to cover the whole minimap, so a snappable overlay can't be placed
+		// on the spec orb. Non-snappable overlays always stay exactly where they are dropped.
+		setSnappable(false);
 	}
 
 	@Override

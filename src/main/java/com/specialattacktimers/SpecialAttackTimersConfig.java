@@ -9,6 +9,7 @@ import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
+import net.runelite.client.config.Units;
 
 @ConfigGroup("specialattacktimers")
 public interface SpecialAttackTimersConfig extends Config
@@ -39,7 +40,7 @@ public interface SpecialAttackTimersConfig extends Config
 
 	@ConfigItem(
 		keyName = "showInfoBox",
-		name = "Show InfoBox",
+		name = "Show Infobox",
 		description = "Show the special attack timer infobox",
 		position = 1,
 		section = displaySection
@@ -50,10 +51,36 @@ public interface SpecialAttackTimersConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "transparentInfoBox",
+		name = "Transparent Infobox",
+		description = "Show only the timer number, with no icon or background.",
+		position = 2,
+		section = displaySection
+	)
+	default boolean transparentInfoBox()
+	{
+		return false;
+	}
+
+	@Range(min = 8, max = 48)
+	@Units(Units.PIXELS)
+	@ConfigItem(
+		keyName = "transparentFontSize",
+		name = "Transparent Font Size",
+		description = "Font size of the Transparent Infobox timer.",
+		position = 3,
+		section = displaySection
+	)
+	default int transparentFontSize()
+	{
+		return 16;
+	}
+
+	@ConfigItem(
 		keyName = "displayFormat",
 		name = "Display Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 2,
+		position = 4,
 		section = displaySection
 	)
 	default DisplayFormat displayFormat()
@@ -65,7 +92,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showCircularOverlay",
 		name = "Show Circular Overlay",
 		description = "Show circular progress indicator on the spec orb (like Regeneration Meter)",
-		position = 3,
+		position = 5,
 		section = displaySection
 	)
 	default boolean showCircularOverlay()
@@ -77,7 +104,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showTimeToFullTooltip",
 		name = "Time to Full Tooltip",
 		description = "Show a \"Time to full\" tooltip when hovering the special attack orb",
-		position = 4,
+		position = 6,
 		section = displaySection
 	)
 	default boolean showTimeToFullTooltip()
@@ -89,7 +116,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "timeToFullFormat",
 		name = "Time to Full Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 5,
+		position = 7,
 		section = displaySection
 	)
 	default DisplayFormat timeToFullFormat()

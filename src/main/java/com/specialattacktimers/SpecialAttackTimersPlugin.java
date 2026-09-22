@@ -75,6 +75,13 @@ import net.runelite.client.util.Text;
 public class SpecialAttackTimersPlugin extends Plugin
 {
 	/**
+	 * Pattern to match unexpanded chat color macros (e.g. "@mes_hl_red@").
+	 * Since RuneLite 1.12.38, game messages contain these instead of <col=...> tags,
+	 * and Text.removeTags() does not strip them. Literal '@' is sent escaped as <at>.
+	 */
+	private static final Pattern CHAT_MACRO_PATTERN = Pattern.compile("@[a-z0-9_]+@");
+
+	/**
 	 * Pattern to match the wave start message in chat.
 	 * Matches "Wave: 1" through "Wave: 12".
 	 */
@@ -329,6 +336,9 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private SpecialAttackTimersTooltipOverlay tooltipOverlay;
 
 	@Inject
+	private SpecialAttackTimersTextOverlay textOverlay;
+
+	@Inject
 	private InfoBoxManager infoBoxManager;
 
 	@Inject
@@ -467,6 +477,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		log.debug("Special Attack Timers plugin started");
 		overlayManager.add(circleOverlay);
 		overlayManager.add(tooltipOverlay);
+		overlayManager.add(textOverlay);
 		updateInfoBox();
 		updateSurgeInfoBox();
 		resetState();
@@ -478,6 +489,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 		log.debug("Special Attack Timers plugin stopped");
 		overlayManager.remove(circleOverlay);
 		overlayManager.remove(tooltipOverlay);
+		overlayManager.remove(textOverlay);
 		removeInfoBox();
 		removeSurgeInfoBox();
 		resetState();
@@ -485,10 +497,11 @@ public class SpecialAttackTimersPlugin extends Plugin
 
 	/**
 	 * Updates the infobox visibility based on config.
+	 * In transparent mode, the text overlay is shown instead of the infobox.
 	 */
 	private void updateInfoBox()
 	{
-		if (config.showInfoBox())
+		if (config.showInfoBox() && !config.transparentInfoBox())
 		{
 			addInfoBox();
 		}
@@ -616,7 +629,7 @@ public class SpecialAttackTimersPlugin extends Plugin
 			return;
 		}
 
-		if ("showInfoBox".equals(event.getKey()))
+		if ("showInfoBox".equals(event.getKey()) || "transparentInfoBox".equals(event.getKey()))
 		{
 			updateInfoBox();
 		}
@@ -855,8 +868,9 @@ public class SpecialAttackTimersPlugin extends Plugin
 			return;
 		}
 
-		// Strip color tags from the message (e.g., "<col=ff3045>Wave: 1</col>" -> "Wave: 1")
-		String strippedMessage = Text.removeTags(message);
+		// Strip color macros and tags from the message
+		// (e.g., "@mes_hl_red@Wave: 1</col>" or "<col=ff3045>Wave: 1</col>" -> "Wave: 1")
+		String strippedMessage = Text.removeTags(CHAT_MACRO_PATTERN.matcher(message).replaceAll(""));
 
 		// Colo Checks
 
@@ -1188,6 +1202,33 @@ public class SpecialAttackTimersPlugin extends Plugin
 	public int getMaxRegenTicks()
 	{
 		return wearingLightbearer ? LIGHTBEARER_REGEN_TICKS : SPEC_REGEN_TICKS;
+	}
+
+	/**
+	 * Gets the spec regen timer text, formatted according to the configured display format.
+	 * Shared by the infobox and the transparent text overlay.
+	 *
+	 * @return Formatted time until the next spec regen
+	 */
+	public String getRegenTimerText()
+	{
+		// Display tick 0 instead of max ticks (25 with LB, 50 without)
+		int displayTicks = ticksUntilRegen == getMaxRegenTicks() ? 0 : ticksUntilRegen;
+
+		switch (config.displayFormat())
+		{
+			case SECONDS:
+				// Whole seconds (rounded up so you know when regen will happen)
+				int wholeSeconds = (int) Math.ceil(displayTicks * 0.6);
+				return String.valueOf(wholeSeconds);
+			case DECIMALS:
+				// Decimal seconds (e.g. 29.4s)
+				double decimalSeconds = displayTicks * 0.6;
+				return String.format("%.1fs", decimalSeconds);
+			case TICKS:
+			default:
+				return String.valueOf(displayTicks);
+		}
 	}
 
 	/**

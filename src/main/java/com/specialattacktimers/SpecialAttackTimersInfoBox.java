@@ -22,24 +22,7 @@ public class SpecialAttackTimersInfoBox extends InfoBox
 	@Override
 	public String getText()
 	{
-		// Display tick 0 instead of max ticks (25 with LB, 50 without)
-		int ticksUntilRegen = plugin.getTicksUntilRegen();
-		int displayTicks = ticksUntilRegen == plugin.getMaxRegenTicks() ? 0 : ticksUntilRegen;
-
-		switch (config.displayFormat())
-		{
-			case SECONDS:
-				// Whole seconds (rounded up so you know when regen will happen)
-				int wholeSeconds = (int) Math.ceil(displayTicks * 0.6);
-				return String.valueOf(wholeSeconds);
-			case DECIMALS:
-				// Decimal seconds (e.g. 29.4s)
-				double decimalSeconds = displayTicks * 0.6;
-				return String.format("%.1fs", decimalSeconds);
-			case TICKS:
-			default:
-				return String.valueOf(displayTicks);
-		}
+		return plugin.getRegenTimerText();
 	}
 
 	@Override

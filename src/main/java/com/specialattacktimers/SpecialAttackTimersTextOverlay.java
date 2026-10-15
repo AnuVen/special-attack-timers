@@ -1,5 +1,6 @@
 package com.specialattacktimers;
 
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -10,7 +11,6 @@ import net.runelite.api.GameState;
 import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.components.TextComponent;
 
 /**
  * Standalone overlay that shows only the spec regen timer number, with no icon or background.
@@ -18,7 +18,7 @@ import net.runelite.client.ui.overlay.components.TextComponent;
  * RuneLite applies the global overlay background color to every infobox.
  *
  * Uses the same font and text outline settings as RuneLite infoboxes, at the configured
- * font size. Movable with Alt-drag.
+ * font size, unless a custom font and/or text outline is chosen in the config. Movable with Alt-drag.
  */
 public class SpecialAttackTimersTextOverlay extends Overlay
 {
@@ -26,7 +26,6 @@ public class SpecialAttackTimersTextOverlay extends Overlay
 	private final SpecialAttackTimersPlugin plugin;
 	private final SpecialAttackTimersConfig config;
 	private final RuneLiteConfig runeLiteConfig;
-	private final TextComponent textComponent = new TextComponent();
 
 	@Inject
 	public SpecialAttackTimersTextOverlay(Client client, SpecialAttackTimersPlugin plugin,
@@ -68,7 +67,9 @@ public class SpecialAttackTimersTextOverlay extends Overlay
 		}
 
 		String text = plugin.getRegenTimerText();
-		Font font = runeLiteConfig.infoboxFont().getFont().deriveFont((float) config.transparentFontSize());
+		Font font = config.useCustomFont()
+			? config.timerFont().getFont()
+			: runeLiteConfig.infoboxFont().getFont().deriveFont((float) config.transparentFontSize());
 		graphics.setFont(font);
 		FontMetrics metrics = graphics.getFontMetrics();
 
@@ -77,14 +78,44 @@ public class SpecialAttackTimersTextOverlay extends Overlay
 		int boxWidth = getMaxTextWidth(metrics);
 		int x = (boxWidth - metrics.stringWidth(text)) / 2;
 
-		textComponent.setText(text);
-		textComponent.setFont(font);
-		textComponent.setColor(config.activeColor());
-		textComponent.setOutline(runeLiteConfig.infoBoxTextOutline());
-		textComponent.setPosition(x, metrics.getAscent());
-		textComponent.render(graphics);
+		drawText(graphics, text, x, metrics.getAscent(), config.activeColor());
 
-		return new Dimension(boxWidth, metrics.getHeight());
+		return new Dimension(boxWidth + 1, metrics.getHeight() + 1);
+	}
+
+	/**
+	 * Draws the timer text with the configured text style (outline, shadow or none).
+	 * "Same as RuneLite" follows the "Outline infobox text" RuneLite setting.
+	 */
+	private void drawText(Graphics2D graphics, String text, int x, int y, Color color)
+	{
+		SpecialAttackTimersConfig.TextStyle style = config.textStyle();
+		if (style == SpecialAttackTimersConfig.TextStyle.RUNELITE)
+		{
+			style = runeLiteConfig.infoBoxTextOutline()
+				? SpecialAttackTimersConfig.TextStyle.OUTLINE
+				: SpecialAttackTimersConfig.TextStyle.SHADOW;
+		}
+
+		graphics.setColor(Color.BLACK);
+		switch (style)
+		{
+			case OUTLINE:
+				graphics.drawString(text, x - 1, y);
+				graphics.drawString(text, x + 1, y);
+				graphics.drawString(text, x, y - 1);
+				graphics.drawString(text, x, y + 1);
+				break;
+			case SHADOW:
+				graphics.drawString(text, x + 1, y + 1);
+				break;
+			case NONE:
+			default:
+				break;
+		}
+
+		graphics.setColor(color);
+		graphics.drawString(text, x, y);
 	}
 
 	/**

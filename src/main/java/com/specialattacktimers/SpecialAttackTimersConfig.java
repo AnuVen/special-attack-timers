@@ -8,6 +8,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.FontType;
 import net.runelite.client.config.Range;
 import net.runelite.client.config.Units;
 
@@ -21,6 +22,24 @@ public interface SpecialAttackTimersConfig extends Config
 		TICKS("Ticks"),
 		SECONDS("Seconds"),
 		DECIMALS("Decimals");
+
+		private final String name;
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
+
+	@Getter
+	@RequiredArgsConstructor
+	enum TextStyle
+	{
+		RUNELITE("Same as RuneLite"),
+		OUTLINE("Outline"),
+		SHADOW("Shadow"),
+		NONE("None");
 
 		private final String name;
 
@@ -77,10 +96,46 @@ public interface SpecialAttackTimersConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "useCustomFont",
+		name = "Custom Font",
+		description = "Use the font below for the Transparent Infobox timer instead of RuneLite's infobox font",
+		position = 4,
+		section = displaySection
+	)
+	default boolean useCustomFont()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "timerFont",
+		name = "Font",
+		description = "Font, size, bold and italic for the Transparent Infobox timer (when Custom Font is on)",
+		position = 5,
+		section = displaySection
+	)
+	default FontType timerFont()
+	{
+		return FontType.REGULAR;
+	}
+
+	@ConfigItem(
+		keyName = "textStyle",
+		name = "Text Outline",
+		description = "Outline, shadow or nothing around the Transparent Infobox timer text",
+		position = 6,
+		section = displaySection
+	)
+	default TextStyle textStyle()
+	{
+		return TextStyle.RUNELITE;
+	}
+
+	@ConfigItem(
 		keyName = "displayFormat",
 		name = "Display Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 4,
+		position = 7,
 		section = displaySection
 	)
 	default DisplayFormat displayFormat()
@@ -92,7 +147,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showCircularOverlay",
 		name = "Show Circular Overlay",
 		description = "Show circular progress indicator on the spec orb (like Regeneration Meter)",
-		position = 5,
+		position = 8,
 		section = displaySection
 	)
 	default boolean showCircularOverlay()
@@ -104,7 +159,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showTimeToFullTooltip",
 		name = "Time to Full Tooltip",
 		description = "Show a \"Time to full\" tooltip when hovering the special attack orb",
-		position = 6,
+		position = 9,
 		section = displaySection
 	)
 	default boolean showTimeToFullTooltip()
@@ -116,7 +171,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "timeToFullFormat",
 		name = "Time to Full Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 7,
+		position = 10,
 		section = displaySection
 	)
 	default DisplayFormat timeToFullFormat()

@@ -70,72 +70,10 @@ public interface SpecialAttackTimersConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "transparentInfoBox",
-		name = "Transparent Infobox",
-		description = "Show only the timer number, with no icon or background.",
-		position = 2,
-		section = displaySection
-	)
-	default boolean transparentInfoBox()
-	{
-		return false;
-	}
-
-	@Range(min = 8, max = 48)
-	@Units(Units.PIXELS)
-	@ConfigItem(
-		keyName = "transparentFontSize",
-		name = "Transparent Font Size",
-		description = "Font size of the Transparent Infobox timer.",
-		position = 3,
-		section = displaySection
-	)
-	default int transparentFontSize()
-	{
-		return 16;
-	}
-
-	@ConfigItem(
-		keyName = "useCustomFont",
-		name = "Custom Font",
-		description = "Use the font below for the Transparent Infobox timer instead of RuneLite's infobox font",
-		position = 4,
-		section = displaySection
-	)
-	default boolean useCustomFont()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "timerFont",
-		name = "Font",
-		description = "Font, size, bold and italic for the Transparent Infobox timer (when Custom Font is on)",
-		position = 5,
-		section = displaySection
-	)
-	default FontType timerFont()
-	{
-		return FontType.REGULAR;
-	}
-
-	@ConfigItem(
-		keyName = "textStyle",
-		name = "Text Outline",
-		description = "Outline, shadow or nothing around the Transparent Infobox timer text",
-		position = 6,
-		section = displaySection
-	)
-	default TextStyle textStyle()
-	{
-		return TextStyle.RUNELITE;
-	}
-
-	@ConfigItem(
 		keyName = "displayFormat",
 		name = "Display Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 7,
+		position = 2,
 		section = displaySection
 	)
 	default DisplayFormat displayFormat()
@@ -147,7 +85,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showCircularOverlay",
 		name = "Show Circular Overlay",
 		description = "Show circular progress indicator on the spec orb (like Regeneration Meter)",
-		position = 8,
+		position = 3,
 		section = displaySection
 	)
 	default boolean showCircularOverlay()
@@ -159,7 +97,7 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "showTimeToFullTooltip",
 		name = "Time to Full Tooltip",
 		description = "Show a \"Time to full\" tooltip when hovering the special attack orb",
-		position = 9,
+		position = 4,
 		section = displaySection
 	)
 	default boolean showTimeToFullTooltip()
@@ -171,12 +109,82 @@ public interface SpecialAttackTimersConfig extends Config
 		keyName = "timeToFullFormat",
 		name = "Time to Full Format",
 		description = "Ticks (game ticks), Seconds (whole), or Decimals (e.g. 29.4s)",
-		position = 10,
+		position = 5,
 		section = displaySection
 	)
 	default DisplayFormat timeToFullFormat()
 	{
 		return DisplayFormat.SECONDS;
+	}
+
+	@ConfigSection(
+		name = "Transparent Infobox",
+		description = "Show the spec regen timer as just the number, with no icon or background",
+		position = 3,
+		closedByDefault = true
+	)
+	String transparentSection = "transparent";
+
+	@ConfigItem(
+		keyName = "transparentInfoBox",
+		name = "Enabled",
+		description = "Show only the timer number, with no icon or background.",
+		position = 1,
+		section = transparentSection
+	)
+	default boolean transparentInfoBox()
+	{
+		return false;
+	}
+
+	@Range(min = 8, max = 48)
+	@Units(Units.PIXELS)
+	@ConfigItem(
+		keyName = "transparentFontSize",
+		name = "Font Size",
+		description = "Font size of the Transparent Infobox timer (when Custom Font is off).",
+		position = 2,
+		section = transparentSection
+	)
+	default int transparentFontSize()
+	{
+		return 16;
+	}
+
+	@ConfigItem(
+		keyName = "useCustomFont",
+		name = "Custom Font",
+		description = "Use the font below for the Transparent Infobox timer instead of RuneLite's infobox font",
+		position = 3,
+		section = transparentSection
+	)
+	default boolean useCustomFont()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "timerFont",
+		name = "Font",
+		description = "Font, size, bold and italic for the Transparent Infobox timer (when Custom Font is on)",
+		position = 4,
+		section = transparentSection
+	)
+	default FontType timerFont()
+	{
+		return FontType.REGULAR;
+	}
+
+	@ConfigItem(
+		keyName = "textStyle",
+		name = "Text Outline",
+		description = "Outline, shadow or nothing around the Transparent Infobox timer text.",
+		position = 5,
+		section = transparentSection
+	)
+	default TextStyle textStyle()
+	{
+		return TextStyle.RUNELITE;
 	}
 
 	@ConfigSection(

@@ -67,6 +67,8 @@ public class SpecialAttackTimersTextOverlay extends Overlay
 		}
 
 		String text = plugin.getRegenTimerText();
+		// A custom font carries its own size (set in RuneLite's font picker); otherwise use
+		// RuneLite's infobox font at the configured size
 		Font font = config.useCustomFont()
 			? config.timerFont().getFont()
 			: runeLiteConfig.infoboxFont().getFont().deriveFont((float) config.transparentFontSize());

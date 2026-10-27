@@ -162,6 +162,17 @@ public class SpecialAttackTimersPlugin extends Plugin
 	private static final int DEATH_CHARGE_RESTORE = 150;
 
 	/**
+	 * Region ID of the Ezekiel boss room, where correctly performing the sword dodge mechanic restores 3% spec.
+	 * These restores must not reset the regen timer.
+	 */
+	private static final int EZEKIEL_REGION_ID = 16214;
+
+	/**
+	 * Spec energy restored by a correctly performed Ezekiel sword dodge (3% = 30 internal units).
+	 */
+	private static final int EZEKIEL_SWORD_DODGE_RESTORE = 30;
+
+	/**
 	 * Surge potion cooldown duration in ticks (5 minutes = 300 seconds = 500 ticks).
 	 */
 	private static final int SURGE_COOLDOWN_TICKS = 500;
@@ -1019,7 +1030,12 @@ public class SpecialAttackTimersPlugin extends Plugin
 				&& actualIncrease > expectedSpecRestoreAmount
 				&& actualIncrease <= maxPossibleIncrease;
 
-			if (inGracePeriod && !naturalRegenAlsoOccurred)
+			// A 3% restore from a correctly performed Ezekiel sword dodge is not natural regen.
+			// If natural regen lands on the same tick, the increase is 130 and the timer still resets.
+			boolean ezekielSwordDodgeRestore = actualIncrease == EZEKIEL_SWORD_DODGE_RESTORE
+				&& getTemplateRegionId() == EZEKIEL_REGION_ID;
+
+			if ((inGracePeriod && !naturalRegenAlsoOccurred) || ezekielSwordDodgeRestore)
 			{
 				// Spec increased only from an effect, not natural regen - don't reset timer
 			}
